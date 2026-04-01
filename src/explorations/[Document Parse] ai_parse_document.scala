@@ -1,18 +1,13 @@
 // Databricks notebook source
-// DBTITLE 1,Check in which region are we running
+// DBTITLE 1,Create pdf_path widget
 // MAGIC %python
-// MAGIC from databricks.sdk import WorkspaceClient
 // MAGIC
-// MAGIC w = WorkspaceClient()
-// MAGIC metastore = w.metastores.current()
-// MAGIC region = w.metastores.get(metastore.metastore_id).region
-// MAGIC print(f"Workspace region: {region}")
-
-// COMMAND ----------
-
-// MAGIC %md
-// MAGIC
-// MAGIC http://go/ai_parse
+// MAGIC # Uncomment the lines below to set up the notebook parameter for the PDF path.
+// MAGIC dbutils.widgets.text(
+// MAGIC     "pdf_path",
+// MAGIC     "/Volumes/catalog/schema/documents/document.pdf",
+// MAGIC     "PDF Path"
+// MAGIC )
 
 // COMMAND ----------
 
@@ -45,7 +40,6 @@
 
 // DBTITLE 1,display example PDF (no need for production)
 // MAGIC %python
-// MAGIC        
 // MAGIC import subprocess
 // MAGIC subprocess.check_call(["pip", "install", "-q", "pymupdf"])
 // MAGIC
@@ -55,6 +49,8 @@
 // MAGIC import io
 // MAGIC
 // MAGIC pdf_path = dbutils.widgets.get("pdf_path")
+// MAGIC if not pdf_path:
+// MAGIC     raise ValueError("Please set the 'pdf_path' parameter to a valid PDF file path before running this cell.")
 // MAGIC doc = fitz.open(pdf_path)
 // MAGIC page = doc[0]
 // MAGIC pix = page.get_pixmap(dpi=300)
@@ -63,7 +59,6 @@
 // MAGIC plt.imshow(img)
 // MAGIC plt.axis("off")
 // MAGIC plt.show()
-// MAGIC
 
 // COMMAND ----------
 
@@ -76,16 +71,16 @@
 
 // DBTITLE 1,SQL
 // MAGIC %sql
-// MAGIC     
 // MAGIC SELECT
 // MAGIC   path,
-// MAGIC   ai_parse_document(content) AS parsed
+// MAGIC   ai_parse_document(content)::STRING AS parsed
 // MAGIC FROM
 // MAGIC   READ_FILES(:pdf_path, format => 'binaryFile');
 
 // COMMAND ----------
 
 // DBTITLE 1,python
+// MAGIC %skip
 // MAGIC %python
 // MAGIC        
 // MAGIC from pyspark.sql.functions import *
@@ -117,11 +112,11 @@
 // MAGIC )
 // MAGIC SELECT
 // MAGIC   path,
-// MAGIC   parsed:document:pages,
-// MAGIC   parsed:document:elements,
-// MAGIC   parsed:corrupted_data,
-// MAGIC   parsed:error_status,
-// MAGIC   parsed:metadata
+// MAGIC   parsed:document:pages::STRING AS pages,
+// MAGIC   parsed:document:elements::STRING AS elements,
+// MAGIC   parsed:corrupted_data::STRING AS corrupted_data,
+// MAGIC   parsed:error_status::STRING AS error_status,
+// MAGIC   parsed:metadata::STRING AS metadata
 // MAGIC FROM corpus;
 
 // COMMAND ----------
@@ -163,6 +158,7 @@
 // COMMAND ----------
 
 // DBTITLE 1,python
+// MAGIC %skip
 // MAGIC %python
 // MAGIC        
 // MAGIC from pyspark.sql.functions import *
@@ -203,12 +199,28 @@
 // COMMAND ----------
 
 // MAGIC %python
-// MAGIC        
 // MAGIC from pyspark.sql.functions import *
+// MAGIC
+// MAGIC # Add your document types below, one per line, inside the array.
+// MAGIC # Example: 'invoice', 'receipt', 'contract', etc.
+// MAGIC document_types = [
+// MAGIC     'invoice',
+// MAGIC     'receipt',
+// MAGIC     'contract',
+// MAGIC     'report',
+// MAGIC     'form',
+// MAGIC     'letter',
+// MAGIC     'Notice of Sale',
+// MAGIC     'Real Estate Evaluation'
+// MAGIC     # Add more document types here
+// MAGIC ]
 // MAGIC
 // MAGIC df = spark.read.format("binaryFile") \
 // MAGIC   .load(pdf_path) \
 // MAGIC   .withColumn("parsed", expr("ai_parse_document(content)")) \
-// MAGIC   .withColumn("doc_type", expr("ai_classify(CAST(parsed:document AS STRING), ARRAY('invoice', 'receipt', 'contract', 'report', 'form', 'letter'))"))
+// MAGIC   .withColumn(
+// MAGIC       "doc_type",
+// MAGIC       expr(f"ai_classify(CAST(parsed:document AS STRING), ARRAY({', '.join([repr(dt) for dt in document_types])}))")
+// MAGIC   )
 // MAGIC
 // MAGIC display(df.select("path", "doc_type"))
